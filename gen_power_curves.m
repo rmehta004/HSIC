@@ -1,8 +1,7 @@
 % Experiment parameters.
-sampleSizes = 10:10:20;
-numSims=35;
+sampleSizes = 900:100:1000;
 alpha=0.05;
-processes = ["indep_ar1"];
+processes = ["indep_ar1", "corr_ar1", "econometric_proc", "dynamic_proc"];
 
 % Setup.
 % Determine where your m-file's folder is.
@@ -11,21 +10,24 @@ folder = fileparts(which(mfilename));
 addpath(genpath(folder));
 rng('default')
 tic
-powers = zeros(length(sampleSizes),1);
-numShuffles=1500;
+powers = zeros(length(sampleSizes),2);
+numShuffles = 1500;
 
+pool = parpool;
 for process = processes
     
+    fprintf('PROCESS: %s\n', process);
     dat = load(sprintf('data/%s_data.mat', process));
 
     % Load data generated in Python.
     X_full = dat.X_full;
     Y_full = dat.Y_full;
+    numSims = size(X_full, 2);
 
-    pool = parpool;
     parfor i = 1:length(sampleSizes)
         tic
         n = sampleSizes(i);
+        fprintf('SAMPLE SIZE: %d\n', n);
         partialResults = zeros(numSims,1);
         bootstrapedValuesShift=[];
 
@@ -34,13 +36,18 @@ for process = processes
             Y = Y_full(1:n, s);
             sigX = median_heur(X);
             sigY = median_heur(Y);
-            bootShift = customShiftHSIC(X,Y,alpha,10,min(n,numShuffles),sigX,sigY,bootstrapedValuesShift); 
-            partialResults(i) = bootShift.areDependent;
+            if mod(i-1,10)==0            
+                [bootShift,bootstrapedValuesShift] = customShiftHSIC(X,Y,alpha,50,min(n, numShuffles),sigX,sigY);   
+            else
+                bootShift = customShiftHSIC(X,Y,alpha,50,min(n, numShuffles),sigX,sigY,bootstrapedValuesShift); 
+            end       
+            partialResults(s) = bootShift.areDependent;
         end           
         toc
-        powers(i) = mean(partialResults,1);
+        powers(i, :) = [n, mean(partialResults)];
     end
     filename = sprintf("power_curves/shiftHSIC_powers_%s.mat", process);
+    disp(powers)
     save(filename,'powers')
 end
 toc
